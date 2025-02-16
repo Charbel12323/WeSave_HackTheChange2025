@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import ReactMarkdown from "react-markdown";
 import { SpendingPieChart } from "../components/spendingpiechart";
 import { ExpensesLineChart } from "@/app/components/ExpensesLineChart";
 import { DashboardCard } from "@/app/components/DashboardCard";
@@ -13,6 +12,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/app/components/ui/card";
+import { Button } from "@/app/components/ui/button";
 import {
   TrendingUp,
   Heart,
@@ -20,46 +20,34 @@ import {
   RefreshCcw,
   CheckCircle2,
 } from "lucide-react";
-import { Button } from "@/app/components/ui/button";
-
-const spendingData = [
-  { name: "Housing", value: 1500 },
-  { name: "Food", value: 500 },
-  { name: "Transportation", value: 300 },
-  { name: "Utilities", value: 200 },
-  { name: "Entertainment", value: 150 },
-];
-
-const expensesData = [
-  { month: "Jan", amount: 2000 },
-  { month: "Feb", amount: 2200 },
-  { month: "Mar", amount: 1800 },
-  { month: "Apr", amount: 2400 },
-  { month: "May", amount: 2100 },
-  { month: "Jun", amount: 2300 },
-];
-
-const totalSpent = spendingData.reduce((sum, item) => sum + item.value, 0);
-const highestExpenditure = Math.max(...spendingData.map((item) => item.value));
-const charityAmount = totalSpent * 0.01;
+import Sidebar from "../components/ui/Sidebar";
 
 /**
- * Convert lines of text to a check-marked list.
+ * Convert lines of text into a bullet list with large check marks.
+ * Also remove any leading asterisks/dashes/brackets, etc.
  */
 function renderCheckList(text: string) {
+  // Split into lines, removing any empty lines
   const lines = text.split("\n").filter((line) => line.trim() !== "");
   return (
-    <ul className="space-y-3">
-      {lines.map((line, idx) => (
-        <li key={idx} className="flex items-start">
-          <CheckCircle2 className="text-teal-400 w-6 h-6 mr-3 mt-1" />
-          <span className="leading-relaxed">{line.trim()}</span>
-        </li>
-      ))}
+    <ul className="space-y-4">
+      {lines.map((line, idx) => {
+        // Remove leading dashes, asterisks, or brackets with a quick regex
+        const cleanedLine = line.replace(/^[-*()\[\]]+\s*/, "").trim();
+        return (
+          <li key={idx} className="flex items-start">
+            <CheckCircle2 className="text-teal-400 w-8 h-8 mr-3 mt-1" />
+            <span className="leading-relaxed text-white">{cleanedLine}</span>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
+/**
+ * Donation Modal
+ */
 function DonateModal({
   isOpen,
   onClose,
@@ -73,11 +61,11 @@ function DonateModal({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // When the modal opens, fetch the next low-income user
   useEffect(() => {
     if (isOpen) {
       setError("");
       setSuccess("");
+      // Get next user in queue
       fetch("http://localhost:5000/get-next-low-income-user")
         .then((res) => res.json())
         .then((data) => {
@@ -194,57 +182,90 @@ export default function DashboardPage() {
     visible: { opacity: 1, y: 0 },
   };
 
-  // AI tips states
+  // --- Spending summary from /saltedge/get-spending-summary
+  const [spendingData, setSpendingData] = useState<{ name: string; value: number }[]>([]);
+  const [loadingSpending, setLoadingSpending] = useState(true);
+  const [totalSpent, setTotalSpent] = useState(0);
+  const [highestExpenditure, setHighestExpenditure] = useState(0);
+
+  // --- Donation modal
+  const [isDonateModalOpen, setDonateModalOpen] = useState(false);
+  const [lowIncomeUser, setLowIncomeUser] = useState<any>(null);
+
+  // --- AI tips
   const [creditTips, setCreditTips] = useState("");
+  const [tipsTitle, setTipsTitle] = useState("");
   const [tipsLoading, setTipsLoading] = useState(true);
   const [tipsError, setTipsError] = useState("");
   const [retryCount, setRetryCount] = useState(0);
 
-  // Donation modal state
-  const [isDonateModalOpen, setDonateModalOpen] = useState(false);
+  // --- Forecast data for line chart
+  const [forecastData, setForecastData] = useState<{ day: string; amount: number }[]>([]);
+  const [loadingForecast, setLoadingForecast] = useState(true);
 
-  // Low-income queue check
-  const [lowIncomeUser, setLowIncomeUser] = useState<any>(null);
+  // Derived charity = 1% of totalSpent
+  const charityAmount = totalSpent * 0.01;
 
-  const fetchLowIncomeUser = async () => {
-    try {
-      const res = await fetch("http://localhost:5000/get-next-low-income-user");
-      if (res.ok) {
+  // 1) Fetch spending summary
+  useEffect(() => {
+    async function fetchSpendingSummary() {
+      try {
+        setLoadingSpending(true);
+        const firebaseUid = localStorage.getItem("firebaseUid");
+        if (!firebaseUid) {
+          console.warn("No firebaseUid found in localStorage.");
+          setSpendingData([]);
+          return;
+        }
+        const res = await fetch(
+          `http://localhost:5000/saltedge/get-spending-summary?firebase_uid=${firebaseUid}`
+        );
+        if (!res.ok) throw new Error("Failed to fetch spending summary.");
         const data = await res.json();
-        setLowIncomeUser(data);
-      } else {
+        setSpendingData(data.pie_chart_data || []);
+        setTotalSpent(data.summary?.total_spent || 0);
+        setHighestExpenditure(data.summary?.highest_expenditure || 0);
+      } catch (err) {
+        console.error(err);
+        setSpendingData([]);
+      } finally {
+        setLoadingSpending(false);
+      }
+    }
+    fetchSpendingSummary();
+  }, []);
+
+  // 2) Fetch next low-income user
+  useEffect(() => {
+    async function fetchLowIncomeUser() {
+      try {
+        const res = await fetch("http://localhost:5000/get-next-low-income-user");
+        if (res.ok) {
+          const data = await res.json();
+          setLowIncomeUser(data);
+        } else {
+          setLowIncomeUser(null);
+        }
+      } catch {
         setLowIncomeUser(null);
       }
-    } catch {
-      setLowIncomeUser(null);
     }
-  };
-
-  useEffect(() => {
-    // Each time the modal is closed or retried, re-check the queue
     fetchLowIncomeUser();
-  }, [isDonateModalOpen, retryCount]);
+  }, []);
 
+  // 3) AI tips
   const fetchCreditTips = async () => {
     setTipsLoading(true);
     setTipsError("");
-
     try {
       const response = await fetch("http://localhost:5000/credit-tips", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt:
-            "Provide 5 specific, actionable tips for improving credit score. Format each tip as a separate line.",
-        }),
+        headers: { "Content-Type": "application/json" },
       });
-
       const data = await response.json();
-
       if (response.ok) {
-        setCreditTips(data.tips);
+        setTipsTitle(data.title || "AI Financial Tips");
+        setCreditTips(data.tips || "");
       } else {
         throw new Error(data.error || "Failed to fetch tips");
       }
@@ -255,16 +276,103 @@ export default function DashboardPage() {
     }
   };
 
-  const handleRetry = () => {
-    setRetryCount((prev) => prev + 1);
-  };
-
   useEffect(() => {
     fetchCreditTips();
   }, [retryCount]);
 
+  const handleRetry = () => {
+    setRetryCount((prev) => prev + 1);
+  };
+
+  // 4) Fetch forecast data for the line chart (7 daily points)
+  useEffect(() => {
+    async function fetchForecast() {
+      try {
+        setLoadingForecast(true);
+
+        // Example transaction data
+        const sampleTransactions = [
+          { date: "2024-11-20", expense: 50 },
+          { date: "2024-11-21", expense: 60 },
+          { date: "2024-11-22", expense: 75 },
+          { date: "2024-11-23", expense: 80 },
+          { date: "2024-11-24", expense: 120 },
+          { date: "2024-11-25", expense: 40 },
+          { date: "2024-11-26", expense: 95 },
+          { date: "2024-11-27", expense: 110 },
+          { date: "2024-11-28", expense: 100 },
+          { date: "2024-11-29", expense: 90 },
+          { date: "2024-11-30", expense: 130 },
+          { date: "2024-12-01", expense: 85 },
+        ];
+
+        const firebaseUid = localStorage.getItem("firebaseUid");
+        if (!firebaseUid) {
+          console.error("Firebase UID not found");
+          return;
+        }
+        const res = await fetch("http://localhost:5000/forecast", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ firebase_uid: firebaseUid }),
+        });
+        if (!res.ok) throw new Error("Forecast fetch failed.");
+        const data = await res.json();
+
+        // Convert historical
+        const histPoints = (data.historical || []).map(
+          (item: { ds: string; y_original: number }) => {
+            const dateObj = new Date(item.ds);
+            return {
+              day: dateObj.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              }),
+              amount: item.y_original,
+            };
+          }
+        );
+
+        // Convert forecast
+        const forecastPoints = (data.forecast || []).map(
+          (item: { ds: string; yhat: number }) => {
+            const dateObj = new Date(item.ds);
+            return {
+              day: dateObj.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+              }),
+              amount: item.yhat,
+            };
+          }
+        );
+
+        // Merge them into a single array
+        const combined = [...histPoints, ...forecastPoints];
+
+        // Sort by date to ensure a continuous line
+        combined.sort((a, b) => {
+          const da = new Date(a.day);
+          const db = new Date(b.day);
+          return da.getTime() - db.getTime();
+        });
+
+        setForecastData(combined);
+      } catch (err) {
+        console.error(err);
+        setForecastData([]);
+      } finally {
+        setLoadingForecast(false);
+      }
+    }
+    fetchForecast();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-900 to-teal-700 px-4 py-12">
+      {/* Sidebar (if you're using it) */}
+      <Sidebar />
+
       {/* Donation Modal */}
       <DonateModal
         isOpen={isDonateModalOpen}
@@ -282,6 +390,7 @@ export default function DashboardPage() {
           Financial Dashboard
         </h1>
 
+        {/* Row: Spending + Forecast */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           <motion.div
             variants={fadeIn}
@@ -291,20 +400,41 @@ export default function DashboardPage() {
             <h2 className="text-2xl font-semibold text-white mb-4">
               Spending Overview
             </h2>
-            <SpendingPieChart data={spendingData} totalAmount={totalSpent} />
+            {loadingSpending ? (
+              <div className="text-white">Loading spending data...</div>
+            ) : spendingData.length === 0 ? (
+              <div className="text-white">No spending data found.</div>
+            ) : (
+              <SpendingPieChart data={spendingData} totalAmount={totalSpent} />
+            )}
           </motion.div>
+
           <motion.div
             variants={fadeIn}
             transition={{ delay: 0.3 }}
             className="bg-white bg-opacity-10 backdrop-filter backdrop-blur-lg rounded-lg p-6"
           >
             <h2 className="text-2xl font-semibold text-white mb-4">
-              Expenses Trend
+              7-Day Forecast
             </h2>
-            <ExpensesLineChart data={expensesData} />
+            {loadingForecast ? (
+              <div className="text-white">Loading forecast data...</div>
+            ) : forecastData.length < 2 ? (
+              <div className="text-white">
+                Not enough data to display a line chart.
+              </div>
+            ) : (
+              <ExpensesLineChart
+                data={forecastData.map((item) => ({
+                  month: item.day, // reuse the 'month' key in the chart
+                  amount: item.amount,
+                }))}
+              />
+            )}
           </motion.div>
         </div>
 
+        {/* Dashboard Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <motion.div variants={fadeIn} transition={{ delay: 0.4 }}>
             <DashboardCard
@@ -343,7 +473,7 @@ export default function DashboardPage() {
           </motion.div>
         </div>
 
-        {/* AI Tips Card */}
+        {/* AI Tips */}
         <motion.div
           variants={fadeIn}
           transition={{ delay: 0.7 }}
@@ -353,10 +483,10 @@ export default function DashboardPage() {
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-3xl font-bold text-white">
-                  AI Credit Score Improvement Tips
+                  {tipsTitle || "AI Financial Tips"}
                 </CardTitle>
                 <CardDescription className="text-lg text-white">
-                  Actionable insights based on AI analysis:
+                  Actionable insights from AI:
                 </CardDescription>
               </div>
               <Button
@@ -382,21 +512,14 @@ export default function DashboardPage() {
                     onClick={handleRetry}
                     variant="outline"
                     size="sm"
-                    className="ml-4"
+                    className="ml-4 text-white"
                   >
                     Retry
                   </Button>
                 </div>
               ) : (
-                <div className="text-white space-y-4">
-                  {creditTips.includes("-") || creditTips.includes("*") ? (
-                    <ReactMarkdown className="prose prose-invert">
-                      {creditTips}
-                    </ReactMarkdown>
-                  ) : (
-                    renderCheckList(creditTips)
-                  )}
-                </div>
+                // Always render as checklist
+                renderCheckList(creditTips)
               )}
             </CardContent>
           </Card>

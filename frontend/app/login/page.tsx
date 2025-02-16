@@ -9,6 +9,7 @@ import { Button } from "../components/ui/button"
 import { signInWithEmailAndPassword } from "firebase/auth"
 import { auth } from "@/firebaseClient"
 
+
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
@@ -60,6 +61,13 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-900 to-teal-700 flex flex-col justify-center items-center px-4 py-12">
+      <button
+        onClick={() => router.push("/")}
+        className="absolute top-4 left-4 bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-md"
+      >
+        Back
+      </button>
+      
       <motion.div
         initial="hidden"
         animate="visible"
