@@ -1,17 +1,13 @@
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 import requests
-import os
 import logging
-from dotenv import load_dotenv
 import json
 import smtplib
 from email.mime.text import MIMEText
-
-# Load environment variables from .env file
-load_dotenv()
 
 # Set up logging with detailed format
 logging.basicConfig(
@@ -19,25 +15,26 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Initialize Firebase Admin SDK using credentials from environment variables
-firebase_config = {
-    "type": os.getenv("FIREBASE_TYPE"),
-    "project_id": os.getenv("FIREBASE_PROJECT_ID"),
-    "private_key_id": os.getenv("FIREBASE_PRIVATE_KEY_ID"),
-    # Replace literal "\n" with actual newlines
-    "private_key": os.getenv("FIREBASE_PRIVATE_KEY").replace("\\n", "\n"),
-    "client_email": os.getenv("FIREBASE_CLIENT_EMAIL"),
-    "client_id": os.getenv("FIREBASE_CLIENT_ID"),
-    "auth_uri": os.getenv("FIREBASE_AUTH_URI"),
-    "token_uri": os.getenv("FIREBASE_TOKEN_URI"),
-    "auth_provider_x509_cert_url": os.getenv("FIREBASE_AUTH_PROVIDER_X509_CERT_URL"),
-    "client_x509_cert_url": os.getenv("FIREBASE_CLIENT_X509_CERT_URL"),
-    "universe_domain": os.getenv("FIREBASE_UNIVERSE_DOMAIN"),
+# Initialize Firebase Admin SDK using inline credentials
+firebase_creds = {
+  "type": "service_account",
+  "project_id": "hackthechange2025",
+  "private_key_id": "c17a11ee4918e85567eabbf86d750d3f76bfdfb0",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDEpZUlLfedt+FQ\nfFQ//aXuX2GWE8PfwQSPuJousgAItOD06t4HOkjX0ZQYIs4Aah8HhQdSOqnSdCz+\n2dC6gmOKVBWhqNAj5zMzVq35KXPZ7tHmH7yCncP0iW7t8XuQXgG40ccEEqVN8Vl7\nmP7n6eNpVlj6/hU0b/kwyv14lCj79n65FBkR8p2SPX/qygVqf1NneNfEA7OQe36Y\nueEmLLSKcOri4cScS2R2ZZGGqmwwg6Z8sXYpCYkF77tuj5WGhenO1uq8/9m2Cr+J\nNU1xSxl6rjQ2VSjWHiTK/tECOSd6ZalquuKgTRV6b7PVueJrXo36F8l/c+hm+dZa\ntndqIu4nAgMBAAECggEAQO9QnbNdJeaXb2VuyKawiVNTvSQPtS5enDrgJvU+T6Gy\n+w0nfgmADkw1c/biQX7JekkyTrPyaf1U8l7orv3pcr8rWXOOL5zj6lsAHdvTVq6m\n/y+RpywDjhdn2wi3vcddGDOlXTHvBhrhao/t9JTmNF2ACnmmdOdYyQTuyEdcdT6u\np22VpeJ3kR97YMkRonWCkLhsJ2c/Qy2R5+84/NTNCzr8y2Jgr25/tQ/9TEPnp5UQ\nM/3ML1ZA3JfjhNNpV6XrDT2hjZy803S6gv+yvwn/oBZAkK0bKAJ9+ILxi+Xv5DsM\nH3V8TwGBgkFC5SE8NuAhgI6NdbbDlxNE61wonpHJQQKBgQDxzWCA/jJ6u1NEUvG7\nqm7y+XGZlo6/EP5N3BkYAVoPKxCoZMgTy8hKPXUsvTQsmKozbOh0vqx/KYjosrtl\nJz+9CRa/sDFcEMF1FnasI+kvZF1S2X65BUNgyZpnoed7z1gDPlrxLPvq/mbxVlKD\nwgP7vqlxJMGODH8lfipa/RinBwKBgQDQMXTov4MUSEmPWpxR5PtX/iJYc+VrzeVx\nHkc57LfvynqgjjjHC1BaSKbtysLABOhwmbpPs2qm3M6KwVSSSIv4zdV5sGFM3umd\nck3yPfvOmDpTZh2j0QY6Ij5VBQysFIlqeejGzLbJRfoBuJ78zrT6lT06seBvykra\nU/PLw7WX4QKBgQDacoeXoY5rMKbmF+UJfMzlN5N4hPsLBEgqgQgulrIM+AQBjaLv\nt2+IGoOsWnYzP+yrrt1G8yeVbimgyC/iD5ZWqkph/MRq/zw3Eoc9tueoiAyDl7gT\nYPzhCOE0dKFTShuiOoggUFp6j0DjEPBU1keQ/EvJysIOGZ4YeiW7s+G8qwKBgQDC\n8wy+RVbAz0/SZM6sAPc61kXi/eN+pzaKTgf0Pa2fZMKfRY31FKsRX6awVIU4uV/O\n0KSdrSvZRDpDw/UlZblsKZIUeQ0jpjirrjU++LuqIPG81oo6s6hZF2e2xRuwpypm\nAfHu9hLTNit9IRv/LrBZVRYYuCephovBFYvc6k5JAQKBgQDZaype/UBsrobI3mke\nwAmKAUaEf9hify2Nu8WZHD2+403RDpUY3xBfUUSVAFuVYjX3sS+h0yyuQrR79HQS\n2gSHRqHuF5uNhiDHzHPOsYxI3o+Nv+HPVIO2ov35KGqaEDtqMU7dfyTCNGLnJhtw\nEoA1wWK0UPrhT7SqeC8Lt9O3jw==\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-fbsvc@hackthechange2025.iam.gserviceaccount.com",
+  "client_id": "100933937478133964344",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40hackthechange2025.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
 }
 
-cred = credentials.Certificate(firebase_config)
+
+cred = credentials.Certificate(firebase_creds)
 firebase_admin.initialize_app(cred)
 
+# Initialize Firestore DB
 db = firestore.client()
 
 app = Flask(__name__)
