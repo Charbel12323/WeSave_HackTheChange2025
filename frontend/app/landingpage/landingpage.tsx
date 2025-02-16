@@ -6,6 +6,7 @@ import { useSpring, animated } from "react-spring"
 import { ChevronDown, CreditCard, PiggyBank, TrendingUp, Heart } from "lucide-react"
 import { Button } from "../components/ui/button"
 import Link from "next/link"
+import Sidebar from "../components/ui/Sidebar"
 
 export default function LandingPage() {
   const fadeIn = {
@@ -21,6 +22,7 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-900 to-teal-700 text-white">
+   
       {/* Header */}
       <header className="container mx-auto px-4 py-6 flex justify-between items-center">
         <motion.div initial="hidden" animate="visible" variants={fadeIn} transition={{ duration: 0.5 }}>

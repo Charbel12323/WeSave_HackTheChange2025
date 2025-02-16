@@ -5,11 +5,13 @@ import { motion } from "framer-motion"
 import Link from "next/link"
 import { Eye, EyeOff } from "lucide-react"
 import { Button } from "../components/ui/button"
+import { useRouter } from "next/navigation"
 
 export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
+  const router = useRouter()
 
   const fadeIn = {
     hidden: { opacity: 0, y: 20 },
@@ -20,26 +22,73 @@ export default function SignUpPage() {
     e.preventDefault()
     setError("")
     setSuccess("")
+
     const form = e.currentTarget
     const username = (form.elements.namedItem("username") as HTMLInputElement).value
     const email = (form.elements.namedItem("email") as HTMLInputElement).value
     const password = (form.elements.namedItem("password") as HTMLInputElement).value
 
     try {
+      // 1️⃣ Create Firebase user
       const res = await fetch("http://localhost:5000/signup", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, email, password }),
       })
 
       const data = await res.json()
-      if (res.ok) {
-        setSuccess("User created successfully!")
-      } else {
+      if (!res.ok) {
         setError(data.error || "Error creating user")
+        return
       }
+
+      const firebaseUid = data.uid
+
+      // 2️⃣ Store UID in localStorage so /after-connect can retrieve it
+      localStorage.setItem("firebaseUid", firebaseUid)
+
+      // 3️⃣ Create Salt Edge customer
+      const saltedgeRes = await fetch("http://localhost:5000/saltedge/create-customer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firebase_uid: firebaseUid,
+          identifier: email, // Unique identifier (email works well)
+        }),
+      })
+      if (!saltedgeRes.ok) {
+        const saltedgeError = await saltedgeRes.json()
+        setError(saltedgeError.error || "User created, but failed to create Salt Edge customer.")
+        return
+      }
+
+      // 4️⃣ Create a Salt Edge Connect session for bank linking
+      const connectSessionRes = await fetch("http://localhost:5000/saltedge/create-connect-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firebase_uid: firebaseUid,
+          return_to: "http://localhost:3000/after-connect", // Redirect after linking bank
+        }),
+      })
+
+      if (!connectSessionRes.ok) {
+        const connectErr = await connectSessionRes.json()
+        setError(connectErr.error || "Failed to create connect session")
+        return
+      }
+
+      // 5️⃣ Parse Salt Edge connect URL
+      const connectData = await connectSessionRes.json()
+      const connectUrl = connectData?.data?.connect_url
+      if (!connectUrl) {
+        setError("No connect_url returned from Salt Edge")
+        return
+      }
+
+      // 6️⃣ Redirect the user to Salt Edge to link their bank
+      window.location.href = connectUrl
+
     } catch (err: any) {
       setError("Network error")
     }
@@ -47,6 +96,14 @@ export default function SignUpPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-900 to-teal-700 flex flex-col justify-center items-center px-4 py-12">
+      
+      <button
+        onClick={() => router.push("/")}
+        className="absolute top-4 left-4 bg-teal-500 hover:bg-teal-600 text-white px-4 py-2 rounded-md"
+      >
+        Back
+      </button>
+      
       <motion.div
         initial="hidden"
         animate="visible"
@@ -57,7 +114,9 @@ export default function SignUpPage() {
         <h2 className="text-3xl font-bold text-white mb-6 text-center">
           Sign Up for FinanceTrack
         </h2>
+
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Full Name */}
           <div>
             <label htmlFor="username" className="block text-sm font-medium text-teal-300 mb-1">
               Full Name
@@ -71,6 +130,8 @@ export default function SignUpPage() {
               required
             />
           </div>
+
+          {/* Email */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-teal-300 mb-1">
               Email Address
@@ -84,6 +145,8 @@ export default function SignUpPage() {
               required
             />
           </div>
+
+          {/* Password */}
           <div className="relative">
             <label htmlFor="password" className="block text-sm font-medium text-teal-300 mb-1">
               Password
@@ -104,8 +167,11 @@ export default function SignUpPage() {
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
+
+          {/* Error/Success Messages */}
           {error && <p className="text-red-500 text-center">{error}</p>}
           {success && <p className="text-green-500 text-center">{success}</p>}
+
           <Button type="submit" size="lg" className="w-full">
             Sign Up
           </Button>
