@@ -4,7 +4,8 @@ import React from "react"
 import { motion } from "framer-motion"
 import { useSpring, animated } from "react-spring"
 import { ChevronDown, CreditCard, PiggyBank, TrendingUp, Heart } from "lucide-react"
-import { Button } from "./ui/button"
+import { Button } from "../components/ui/button"
+import Link from "next/link"
 
 export default function LandingPage() {
   const fadeIn = {
@@ -73,9 +74,11 @@ export default function LandingPage() {
             variants={fadeIn}
             transition={{ duration: 0.5, delay: 0.4 }}
           >
-            <Button size="lg" className="bg-teal-500 hover:bg-teal-600 text-white">
-              Get Started Free
-            </Button>
+            <Link href="/signup">
+                <Button size="lg" className="bg-teal-500 hover:bg-teal-600 text-white">
+                    Get Started Free
+                </Button>
+            </Link>
           </motion.div>
         </section>
 
